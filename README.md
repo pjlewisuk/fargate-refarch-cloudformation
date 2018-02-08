@@ -1,6 +1,3 @@
-# fargate-refarch-cloudformation
-A reference architecture for deploying containerized micro-services with AWS Fargate and AWS CloudFormation (YAML)
-
 # Deploying Microservices with AWS Fargate, AWS CloudFormation, and an Application Load Balancer
 
 This reference architecture provides a set of YAML templates for deploying micro-services to [Amazon EC2 Container Service (Amazon ECS)](http://docs.aws.amazon.com/AmazonECS/latest/developerguide/Welcome.html) using the [AWS Fargate launchtype](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ECS_GetStarted.html) with [AWS CloudFormation](https://aws.amazon.com/cloudformation/).
