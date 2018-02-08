@@ -1,0 +1,137 @@
+Description:
+    This is an example of a long-running ECS service that needs to connect to another ECS service (product-service)
+    via the load-balanced URL. We use an environment variable to pass the product-service URL to the containers.
+
+Parameters: 
+
+    Cluster:
+        Description: Please provide the ECS Cluster ID that this service should run on
+        Type: String
+
+    DesiredCount: 
+        Description: How many instances of this task should we run across our cluster?
+        Type: Number
+        Default: 2
+
+    ECSTaskExecutionRole:
+        Description: The ECS Task Execution Role
+        Type: String
+
+    Listener:
+        Description: The Application Load Balancer listener to register with
+        Type: String
+
+    Path: 
+        Description: The path to register with the Application Load Balancer
+        Type: String
+        Default: /
+
+    ProductServiceUrl:
+        Description: The URL of the Product Service (used to fetch product information)
+        Type: String
+
+    SecurityGroup:
+        Description: Select the Security Group to use for the ECS cluster hosts
+        Type: AWS::EC2::SecurityGroup::Id
+
+    Subnets:
+        Description: Choose which subnets this ECS cluster should be deployed to
+        Type: List<AWS::EC2::Subnet::Id>
+
+    TaskCpu:
+        Default: 256
+        Description: How much CPU to give the ECS task, in CPU units (where 1,024 units is 1 CPU) or vCPUs
+        Type: Number
+
+    TaskMemory:
+        Default: 512
+        Description: How much memory to give the ECS task in megabytes
+        Type: Number
+
+    VPC:
+        Description: The VPC that the ECS cluster is deployed to
+        Type: AWS::EC2::VPC::Id
+        
+Resources:
+
+    Service: 
+        Type: AWS::ECS::Service
+        DependsOn: ListenerRule
+        Properties: 
+            Cluster: !Ref Cluster
+            DeploymentConfiguration:
+                MaximumPercent: 200
+                MinimumHealthyPercent: 100
+            DesiredCount: !Ref DesiredCount
+            LaunchType: FARGATE
+            NetworkConfiguration:
+                AwsvpcConfiguration:
+                    AssignPublicIp: ENABLED
+                    SecurityGroups:
+                      - !Ref SecurityGroup
+                    Subnets:
+                      - !Select [ 0, !Ref Subnets ]
+                      - !Select [ 1, !Ref Subnets ]
+            TaskDefinition: !Ref TaskDefinition
+            LoadBalancers: 
+                - ContainerName: "website-service"
+                  ContainerPort: 8000
+                  TargetGroupArn: !Ref TargetGroup
+
+    TaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            Family: website-service
+            Cpu: !Ref 'TaskCpu'
+            Memory: !Ref 'TaskMemory'
+            NetworkMode: awsvpc
+            RequiresCompatibilities:
+              - FARGATE
+            ExecutionRoleArn: !Ref ECSTaskExecutionRole
+            ContainerDefinitions:
+                - Name: website-service
+                  Essential: true
+                  Image: 275396840892.dkr.ecr.us-east-1.amazonaws.com/ecs-refarch-cloudformation/website-service:1.0.0
+                  # CPU and Memory reservations are set to 50% of the default values specified above
+                  Cpu: 128
+                  Memory: 512
+                  MemoryReservation: 256
+                  Environment: 
+                    - Name: PRODUCT_SERVICE_URL
+                      Value: !Ref ProductServiceUrl
+                  PortMappings:
+                    - ContainerPort: 8000
+
+    CloudWatchLogsGroup:
+        Type: AWS::Logs::LogGroup
+        Properties: 
+            LogGroupName: !Ref AWS::StackName
+            RetentionInDays: 365  
+
+    TargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+            VpcId: !Ref VPC
+            Port: 80
+            Protocol: HTTP
+            TargetType: ip
+            Matcher: 
+                HttpCode: 200-299
+            HealthCheckIntervalSeconds: 10
+            HealthCheckPath: /
+            HealthCheckProtocol: HTTP
+            HealthCheckTimeoutSeconds: 5
+            HealthyThresholdCount: 2
+    
+    ListenerRule:
+        Type: AWS::ElasticLoadBalancingV2::ListenerRule
+        Properties:
+            ListenerArn: !Ref Listener
+            Priority: 1
+            Conditions:
+                - Field: path-pattern
+                  Values: 
+                    - !Ref Path
+            Actions:
+                - TargetGroupArn: !Ref TargetGroup
+                  Type: forward

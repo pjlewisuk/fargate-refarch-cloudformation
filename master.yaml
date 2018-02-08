@@ -1,0 +1,96 @@
+Description: >
+
+    This template deploys a VPC with public and private subnets spread across
+    two Availabilty Zones. It deploys an Internet Gateway and a pair of NAT
+    Gateways, with the relevant routes in each of the subnets.
+
+    It then deploys an ECS cluster distributed across multiple Availability Zones. 
+
+    Finally, it deploys a pair of example ECS services from containers published in 
+    Amazon EC2 Container Registry (Amazon ECR).
+
+    Last Modified: 7th February 2018
+    Author: Paul Lewis <pjlewis@amazon.co.uk>
+
+Resources:
+
+    VPC:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: https://s3.amazonaws.com/fargate-refarch-cloudformation/infrastructure/vpc.yaml
+            Parameters:
+                EnvironmentName:    !Ref AWS::StackName
+                PrivateSubnet1CIDR: 10.180.24.0/21
+                PrivateSubnet2CIDR: 10.180.32.0/21
+                PublicSubnet1CIDR:  10.180.8.0/21
+                PublicSubnet2CIDR:  10.180.16.0/21
+                VpcCIDR:            10.180.0.0/16
+
+    SecurityGroups:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: https://s3.amazonaws.com/fargate-refarch-cloudformation/infrastructure/security-groups.yaml
+            Parameters: 
+                EnvironmentName: !Ref AWS::StackName
+                VPC: !GetAtt VPC.Outputs.VPC
+
+    ALB:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: https://s3.amazonaws.com/fargate-refarch-cloudformation/infrastructure/load-balancers.yaml
+            Parameters:
+                EnvironmentName: !Ref AWS::StackName
+                SecurityGroup: !GetAtt SecurityGroups.Outputs.LoadBalancerSecurityGroup
+                Subnets: !GetAtt VPC.Outputs.PublicSubnets
+                VPC: !GetAtt VPC.Outputs.VPC
+
+    ECS:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: https://s3.amazonaws.com/fargate-refarch-cloudformation/infrastructure/ecs-cluster.yaml
+            Parameters:
+                EnvironmentName: !Ref AWS::StackName
+                VPC: !GetAtt VPC.Outputs.VPC
+
+    ProductService:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: https://s3.amazonaws.com/fargate-refarch-cloudformation/services/product-service/service.yaml
+            Parameters:
+                Cluster: !GetAtt ECS.Outputs.Cluster
+                DesiredCount: 2
+                ECSTaskExecutionRole: !GetAtt ECS.Outputs.ECSTaskExecutionRole
+                Listener: !GetAtt ALB.Outputs.Listener 
+                Path: /products
+                SecurityGroup: !GetAtt SecurityGroups.Outputs.ECSHostSecurityGroup
+                Subnets: !GetAtt VPC.Outputs.PrivateSubnets
+                TaskCpu: 512
+                TaskMemory: 1024
+                VPC: !GetAtt VPC.Outputs.VPC
+
+    WebsiteService:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: https://s3.amazonaws.com/fargate-refarch-cloudformation/services/website-service/service.yaml
+            Parameters:
+                Cluster: !GetAtt ECS.Outputs.Cluster
+                DesiredCount: 2
+                ECSTaskExecutionRole: !GetAtt ECS.Outputs.ECSTaskExecutionRole
+                Listener: !GetAtt ALB.Outputs.Listener 
+                Path: /
+                ProductServiceUrl: !Join [ "/", [ !GetAtt ALB.Outputs.LoadBalancerUrl, "products" ]]
+                SecurityGroup: !GetAtt SecurityGroups.Outputs.ECSHostSecurityGroup
+                Subnets: !GetAtt VPC.Outputs.PrivateSubnets
+                TaskCpu: 256
+                TaskMemory: 512
+                VPC: !GetAtt VPC.Outputs.VPC
+
+Outputs:
+
+    ProductServiceUrl: 
+        Description: The URL endpoint for the product service
+        Value: !Join [ "/", [ !GetAtt ALB.Outputs.LoadBalancerUrl, "products" ]]
+
+    WebsiteServiceUrl: 
+        Description: The URL endpoint for the website service
+        Value: !Join ["", [ !GetAtt ALB.Outputs.LoadBalancerUrl, "/" ]]

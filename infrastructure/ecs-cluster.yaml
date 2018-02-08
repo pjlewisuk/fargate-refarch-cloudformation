@@ -1,0 +1,59 @@
+Description: >
+    This template deploys an ECS cluster and creates an ECS Task Execution IAM Role.
+
+Parameters:
+
+    EnvironmentName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+
+    VPC:
+        Description: Choose which VPC this ECS cluster should be deployed to
+        Type: AWS::EC2::VPC::Id
+
+Resources:
+
+    ECSCluster:
+        Type: AWS::ECS::Cluster
+        Properties:
+            ClusterName: !Ref EnvironmentName
+
+    # This is a role which is used by the ECS service to perform ECS API actions on your 
+    # behalf, such pulling container images from ECR, or storing container application
+    # logs in CloudWatch.
+    ECSTaskExecutionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Statement:
+                - Effect: Allow
+                  Principal:
+                    Service: [ecs-tasks.amazonaws.com]
+                  Action: ['sts:AssumeRole']
+            Path: /
+            Policies:
+                - PolicyName: AmazonECSTaskExecutionRolePolicy
+                  PolicyDocument:
+                    Statement:
+                    - Effect: Allow
+                      Action:
+                        # Allow the ECS Tasks to download images from ECR
+                        - 'ecr:GetAuthorizationToken'
+                        - 'ecr:BatchCheckLayerAvailability'
+                        - 'ecr:GetDownloadUrlForLayer'
+                        - 'ecr:BatchGetImage'
+
+                        # Allow the ECS tasks to upload logs to CloudWatch
+                        - 'logs:CreateLogStream'
+                        - 'logs:PutLogEvents'
+                      Resource: '*'
+
+Outputs:
+
+    Cluster:
+        Description: A reference to the ECS cluster
+        Value: !Ref ECSCluster
+
+    ECSTaskExecutionRole:
+        Description: A reference to the ECS Task Execution Role
+        Value: !GetAtt ECSTaskExecutionRole.Arn
